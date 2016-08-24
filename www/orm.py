@@ -6,48 +6,49 @@ __author__ = 'Michael Liao'
 import asyncio, logging
 
 import aiomysql
-
+#log 输出数据库信息
 def log(sql, args=()):
     logging.info('SQL: %s' % sql)
 
 async def create_pool(loop, **kw):
     logging.info('create database connection pool...')
     global __pool
-    __pool = await aiomysql.create_pool(
-        host=kw.get('host', 'localhost'),
-        port=kw.get('port', 3306),
+    __pool = await aiomysql.create_pool(#kw是create_pool函数的关键字参数**kw
+        host=kw.get('host', 'localhost'),#默认host为localhost
+        port=kw.get('port', 3306),#默认端口3306
         user=kw['user'],
         password=kw['password'],
         db=kw['db'],
         charset=kw.get('charset', 'utf8'),
         autocommit=kw.get('autocommit', True),
-        maxsize=kw.get('maxsize', 10),
+        maxsize=kw.get('maxsize', 10),#最大连接数是10，最小是1
         minsize=kw.get('minsize', 1),
-        loop=loop
+        loop=loop#loop作用暂时不明确
     )
-
+#将执行sql的代码封装进select函数，调用时秩序传入sql，和sql需要的一些数值
 async def select(sql, args, size=None):
     log(sql, args)
-    global __pool
-    async with __pool.get() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as cur:
+    global __pool#声明全局变量__pool
+    async with __pool.get() as conn:#从连接池中获取一个数据库连接 
+        async with conn.cursor(aiomysql.DictCursor) as cur: #进入数据库
+            #sql.replace 将sql中的？换成python中的%s，args为插入sql的参数
             await cur.execute(sql.replace('?', '%s'), args or ())
-            if size:
-                rs = await cur.fetchmany(size)
+            if size:#size为返回的结果数
+                rs = await cur.fetchmany(size)#len(rs)为查询结果数量
             else:
                 rs = await cur.fetchall()
         logging.info('rows returned: %s' % len(rs))
         return rs
 
-async def execute(sql, args, autocommit=True):
+async def execute(sql, args, autocommit=True):#autocommit自动提交
     log(sql)
     async with __pool.get() as conn:
-        if not autocommit:
+        if not autocommit:#如果不是自动提交就连接数据库
             await conn.begin()
         try:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(sql.replace('?', '%s'), args)
-                affected = cur.rowcount
+                affected = cur.rowcount#受影响的行数
             if not autocommit:
                 await conn.commit()
         except BaseException as e:
